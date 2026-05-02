@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 .task6venv
+.env.example
 
 # Python
 __pycache__/
@@ -54,6 +55,11 @@ htmlcov/
 
 # Docker
 docker-compose.override.yml
+DEPLOYMENT.md
+docker-compose.yml
+Dockerfile.*
+FRONTEND.md
+
 
 # OS
 *.log
@@ -67,6 +73,8 @@ files.zip
 temp/
 cache/
 *.tmp
+run.bat
+run.sh
 
 # Notebooks
 .ipynb_checkpoints/
