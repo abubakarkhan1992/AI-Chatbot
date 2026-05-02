@@ -82,10 +82,16 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 if "api_endpoint" not in st.session_state:
-    st.session_state.api_endpoint = os.getenv("API_ENDPOINT", "http://localhost:8000")
+    st.session_state.api_endpoint = os.getenv("API_ENDPOINT", "https://vercel-fastapi-for-ai-chatbot.vercel.app/")
 
 if "message_count" not in st.session_state:
     st.session_state.message_count = 0
+
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
+
+if "waiting_for_response" not in st.session_state:
+    st.session_state.waiting_for_response = False
 
 # ============================================================================
 # SIDEBAR CONFIGURATION
@@ -198,92 +204,99 @@ with chat_container:
 st.markdown("---")
 st.markdown("### ✉️ Send a Message")
 
-with st.form(key="chat_form", clear_on_submit=True):
-    user_prompt = st.text_area(
+col_input, col_button = st.columns([5, 1])
+
+with col_input:
+    user_input = st.text_area(
         "Your message",
         placeholder="Type your question here... (max 300 characters)",
         height=100,
         max_chars=300,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="message_input",
+        value=st.session_state.user_input,
+        on_change=lambda: None  # Ensure state updates
     )
+
+with col_button:
+    st.write("")  # Spacing
+    st.write("")  # Spacing
+    send_clicked = st.button(
+        "📤 Send",
+        use_container_width=True,
+        type="primary",
+        key="send_button"
+    )
+
+# Handle send button click
+if send_clicked and user_input.strip():
+    st.session_state.user_input = user_input.strip()
+    st.session_state.waiting_for_response = True
     
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        submit_button = st.form_submit_button(
-            "📤 Send",
-            use_container_width=True,
-            type="primary"
-        )
-    with col2:
-        st.form_submit_button(
-            "🔄",
-            help="Regenerate last response",
-            use_container_width=True,
-            disabled=True  # Can implement later
-        )
+    # Add user message to history
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": user_input.strip()
+    })
+    st.session_state.message_count += 1
     
-    if submit_button and user_prompt.strip():
-        # Add user message to history
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": user_prompt.strip()
-        })
-        st.session_state.message_count += 1
-        
-        # Send to API
-        with st.spinner("🤔 Thinking..."):
-            try:
-                response = requests.post(
-                    f"{st.session_state.api_endpoint}/chat",
-                    json={"prompt": user_prompt.strip()},
-                    timeout=35  # LLM timeout is 30s + buffer
+    # Send to API
+    with st.spinner("🤔 Thinking..."):
+        try:
+            response = requests.post(
+                f"{st.session_state.api_endpoint}/chat",
+                json={"prompt": user_input.strip()},
+                timeout=35  # LLM timeout is 30s + buffer
+            )
+            
+            if response.status_code == 200:
+                ai_reply = response.json().get("reply", "No response received")
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": ai_reply
+                })
+            else:
+                error_detail = response.json().get(
+                    "detail",
+                    f"HTTP {response.status_code}"
                 )
-                
-                if response.status_code == 200:
-                    ai_reply = response.json().get("reply", "No response received")
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": ai_reply
-                    })
-                else:
-                    error_detail = response.json().get(
-                        "detail",
-                        f"HTTP {response.status_code}"
-                    )
-                    st.session_state.chat_history.append({
-                        "role": "error",
-                        "content": f"API Error: {error_detail}"
-                    })
-                    st.error(f"❌ {error_detail}", icon="⚠️")
-            
-            except requests.Timeout:
-                error_msg = "Request timed out. Please try again."
                 st.session_state.chat_history.append({
                     "role": "error",
-                    "content": error_msg
+                    "content": f"API Error: {error_detail}"
                 })
-                st.error(f"❌ {error_msg}", icon="⏱️")
-            
-            except requests.ConnectionError:
-                error_msg = f"Could not connect to API at {st.session_state.api_endpoint}. Is it running?"
-                st.session_state.chat_history.append({
-                    "role": "error",
-                    "content": error_msg
-                })
-                st.error(f"❌ {error_msg}", icon="🔌")
-            
-            except Exception as e:
-                error_msg = f"Unexpected error: {str(e)}"
-                st.session_state.chat_history.append({
-                    "role": "error",
-                    "content": error_msg
-                })
-                st.error(f"❌ {error_msg}", icon="💥")
+                st.error(f"❌ {error_detail}", icon="⚠️")
         
-        st.rerun()
+        except requests.Timeout:
+            error_msg = "Request timed out. Please try again."
+            st.session_state.chat_history.append({
+                "role": "error",
+                "content": error_msg
+            })
+            st.error(f"❌ {error_msg}", icon="⏱️")
+        
+        except requests.ConnectionError:
+            error_msg = f"Could not connect to API at {st.session_state.api_endpoint}. Is it running?"
+            st.session_state.chat_history.append({
+                "role": "error",
+                "content": error_msg
+            })
+            st.error(f"❌ {error_msg}", icon="🔌")
+        
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            st.session_state.chat_history.append({
+                "role": "error",
+                "content": error_msg
+            })
+            st.error(f"❌ {error_msg}", icon="💥")
     
-    elif submit_button and not user_prompt.strip():
-        st.warning("⚠️ Please enter a message before sending.")
+    # Clear input and waiting state
+    st.session_state.user_input = ""
+    st.session_state.waiting_for_response = False
+    st.rerun()
+
+elif send_clicked and not user_input.strip():
+    st.warning("⚠️ Please enter a message before sending.")
 
 # ============================================================================
 # FOOTER
